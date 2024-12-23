@@ -7,9 +7,7 @@ import matplotlib.pyplot as plt
 import SimpleITK as sitk
 
 def formalize_par_rec(new_cases_dir, patient_name):
-    """
-    All par/rec files should be named as "[patient_name]_[seq_id].par/rec"
-    """
+    # All par/rec files should be named as "[patient_name]_[seq_id].par/rec"
     print("******** formalize par-rec files ********")
     file_path = os.path.join(new_cases_dir, patient_name)
     files = os.listdir(file_path)
@@ -59,7 +57,7 @@ def sort_sequence_id(sequence_ids):
     
 def query_par_rec_save_info(new_cases_dir, processed_cases_dir, patient_name):
     print("******** query par-rec files and save info to Excel ********")
-    output_dir = os.path.join(processed_cases_dir, patient_name+"_all", patient_name)
+    output_dir = os.path.join(processed_cases_dir, patient_name+"_all")
     os.makedirs(output_dir, exist_ok=True)
     files = os.listdir(os.path.join(new_cases_dir, patient_name))
     all_scan_info = []
@@ -72,78 +70,96 @@ def query_par_rec_save_info(new_cases_dir, processed_cases_dir, patient_name):
     sort_index = sort_sequence_id(all_scan_info[:, 1])
     all_scan_info = all_scan_info[sort_index]
     column_names = ["Patient_id", "Sequence_id", "Protocol", "Examination_date", "slices", 
-               "resolution", "FOV", "Angulation_midslice", "Off_Centre_midslice"]
+                    "resolution", "FOV", "Angulation_midslice", "Off_Centre_midslice"]
     df = pd.DataFrame(data=all_scan_info, columns=column_names)
     df.to_excel(os.path.join(output_dir, 'all_scan_info.xlsx'), index=False)
     print("Sucessfully saved to [" + os.path.join(output_dir, 'all_scan_info.xlsx') + "]")
-    return
 
-def convert_selected_par_rec_to_nifti(new_cases_dir, processed_cases_dir, patient_name):
-    print("******** convert selected par-rec files to nii files in [1_raw_output] ********")
-    df_all = pd.read_excel(os.path.join(processed_cases_dir, patient_name+"_all", patient_name, 
-                                        "all_scan_info.xlsx"), engine ='openpyxl')
-    output_dir = os.path.join(processed_cases_dir, patient_name+"_all", patient_name,
-                              "1_raw_output", patient_name) 
-    # to avoid generating duplicate nii files by dcm2niix
-    os.makedirs(output_dir, exist_ok=False) 
-    df = df_all[df_all['Patient_id'] == patient_name] # select data only for this patient
-    sequence_not_used = []
+def CovertPARToNIFI(base_dir, out_dir, df):
+    os.makedirs(out_dir, exist_ok=True)
     for seq_idx in range(len(df)):
-        protocol = df.iloc[seq_idx]['Protocol'].lower()
+        patient_id = df.iloc[seq_idx]['Patient_id']
+        protocol = df.iloc[seq_idx]['Protocol']
         sequence_id = df.iloc[seq_idx]['Sequence_id']
-        if ('mprage1.1mm' in protocol) or \
-        (('mprage' in protocol or 't1' in protocol) and 'pre' in protocol):
-            print("T1w: ", sequence_id, protocol)
-            image_suffix = 'T1'
-            image_name = patient_name + '_' + image_suffix
-            target_path = os.path.join(new_cases_dir, patient_name, sequence_id+".rec")
-            os.system('dcm2niix -f ' + image_name + ' -o ' + output_dir + ' '  + target_path)
-        elif 'mpragegd' in protocol or \
-        (('mprage' in protocol or 't1' in protocol) and 'post' in protocol):
-            print("T1c: ", sequence_id, protocol)
-            image_suffix = 'T1c'
-            image_name = patient_name + '_' + image_suffix
-            target_path = os.path.join(new_cases_dir, patient_name, sequence_id+".rec")
-            os.system('dcm2niix -f ' + image_name + ' -o ' + output_dir + ' '  + target_path)
-        elif 'de/t2' in protocol or 't2w_ax' in protocol:
-            image_suffix = 'T2'
-            print("T2w: ", sequence_id, protocol)
-            image_name = patient_name + '_' + image_suffix
-            target_path = os.path.join(new_cases_dir, patient_name, sequence_id+".rec")
-            os.system('dcm2niix -f ' + image_name + ' -o ' + output_dir + ' '  + target_path)
-        elif 'flair_s2' in protocol: # use S2 rather than CS_4
-            image_suffix = 'Flair'
-            print("FLAIR: ", sequence_id, protocol)
-            image_name = patient_name + '_' + image_suffix
-            target_path = os.path.join(new_cases_dir, patient_name, sequence_id+".rec")
-            os.system('dcm2niix -f ' + image_name + ' -o ' + output_dir + ' '  + target_path)
-        elif 'apt' in protocol:
-            image_suffix = sequence_id.split('_')[-2] + '_' + 'apt'
-            print("APTw: ", sequence_id, protocol)
-            image_name = patient_name + '_' + image_suffix
-            target_path = os.path.join(new_cases_dir, patient_name, sequence_id+".rec")
-            os.system('dcm2niix -f ' + image_name + ' -o ' + output_dir + ' '  + target_path)
-        elif 'highres' in protocol:
-            image_suffix = sequence_id.split('_')[-2] + '_' + 'highres'
-            print("High Resolution: ", sequence_id, protocol)
-            image_name = patient_name + '_' + image_suffix
-            target_path = os.path.join(new_cases_dir, patient_name, sequence_id+".rec")
-            os.system('dcm2niix -f ' + image_name + ' -o ' + output_dir + ' '  + target_path)
-        else:
-            sequence_not_used.append([sequence_id, protocol])
-    print("Sequences not used:")
-    for i in range(len(sequence_not_used)):
-        print(sequence_not_used[i])
-    return
+        if 'Look Locker' in protocol:
+            print("T1: ", protocol)
+            image_name = '%f_%p_%t_%s'
+            target_path = os.path.join(base_dir, patient_id, sequence_id + '.rec')
+            output_path = os.path.join(out_dir, 'T1')
+            os.makedirs(output_path, exist_ok=True)
+            os.system('dcm2niix -f ' + image_name + ' -o ' + output_path + ' ' + target_path)
+        elif 'T2_ME' in protocol:
+            print("T2: ", protocol)
+            image_name = '%f_%p_%t_%s'
+            target_path = os.path.join(base_dir, patient_id, sequence_id + '.rec')
+            output_path = os.path.join(out_dir, 'T2')
+            os.makedirs(output_path, exist_ok=True)
+            os.system('dcm2niix -f ' + image_name + ' -o ' + output_path + ' ' + target_path)
+        elif 'Zspec' in protocol or 'Z_single' in protocol or 'EMR' in protocol:
+            print("EMR: ", protocol)
+            image_name = '%f_%p_%t_%s'
+            target_path = os.path.join(base_dir, patient_id, sequence_id + '.rec')
+            output_path = os.path.join(out_dir, 'EMR')
+            os.makedirs(output_path, exist_ok=True)
+            os.system('dcm2niix -f ' + image_name + ' -o ' + output_path + ' ' + target_path)  
+        elif 'WASSR' in protocol:
+            print("WASSR: ", protocol)
+            image_name = '%f_%p_%t_%s'
+            target_path = os.path.join(base_dir, patient_id, sequence_id + '.rec')
+            output_path = os.path.join(out_dir, 'WASSR')
+            os.makedirs(output_path, exist_ok=True)
+            os.system('dcm2niix -f ' + image_name + ' -o ' + output_path + ' ' + target_path) 
+        elif 'HighRes' in protocol:
+            print("High Resolution: ", protocol)
+            image_name = '%f_%p_%t_%s'
+            target_path = os.path.join(base_dir, patient_id, sequence_id + '.rec')
+            output_path = os.path.join(out_dir, "HighRes")
+            os.makedirs(output_path, exist_ok=True)
+            os.system('dcm2niix -f ' + image_name + ' -o ' + output_path + ' ' + target_path)
 
-def sepcify_sequence_ids(MTR_1p5uT_id, WASSR_EMR_id, MTR_2uT_id):
-    seq_dict = {"MTR_1p5uT_id":MTR_1p5uT_id, "WASSR_EMR_id":WASSR_EMR_id, 
-                "MTR_2uT_id":MTR_2uT_id}
-    return seq_dict
+def get_nifti_for_fitting(new_cases_dir, processed_cases_dir, patient_name):
+    out_dir = os.path.join(processed_cases_dir, patient_name+"_all")  
+    df = pd.read_excel(os.path.join(processed_cases_dir, patient_name+"_all", "all_scan_info.xlsx"))     
+    CovertPARToNIFI(new_cases_dir, out_dir, df) 
 
+def set_geometry_EMR(EMR, img):
+    # EMR/WASSR (4D) -> M0 (3D)
+    spacing = EMR.GetSpacing()[0:3]
+    origin = EMR.GetOrigin()[0:3]
+    temp = np.array(EMR.GetDirection())
+    temp = np.reshape(temp, [4, 4])
+    temp = temp[0:3, 0:3]
+    direction = temp.flatten()
+    img.SetSpacing(spacing)
+    img.SetOrigin(origin)
+    img.SetDirection(direction)
+    return img
 
+def check_data_helper(img, name):
+    print("********", name, "********")
+    arr = sitk.GetArrayFromImage(img)
+    spacing = img.GetSpacing()
+    origin = img.GetOrigin()
+    direction = img.GetDirection()
+    print("shape:", arr.shape)
+    print("spacing:", spacing)
+    print("origin:",  origin)
+    print("direction:", direction)
 
-
+def check_data(processed_cases_dir, patient_name):
+    base_dir = os.path.join(processed_cases_dir, patient_name+"_all")
+    M0 = sitk.ReadImage(os.path.join(base_dir, "M0.nii"), sitk.sitkFloat32)
+    EMR = sitk.ReadImage(os.path.join(base_dir, "EMR_reg.nii"), sitk.sitkFloat32)
+    WASSR = sitk.ReadImage(os.path.join(base_dir, "WASSR_reg.nii"), sitk.sitkFloat32)
+    T1 = sitk.ReadImage(os.path.join(base_dir, "T1_map_reg.nii"), sitk.sitkFloat32)
+    T2 = sitk.ReadImage(os.path.join(base_dir, "T2_map_reg.nii"), sitk.sitkFloat32)
+    HighRes = sitk.ReadImage(os.path.join(base_dir, "HighRes_reg.nii"), sitk.sitkFloat32)
+    check_data_helper(M0, "M0")
+    check_data_helper(T1, "T1")
+    check_data_helper(T2, "T2")
+    check_data_helper(EMR, "EMR")
+    check_data_helper(WASSR, "WASSR")
+    check_data_helper(HighRes, "HighRes")
 
 
 

@@ -1,5 +1,4 @@
 import numpy as np
-import math
 from scipy.optimize import curve_fit
 from scipy import stats
 import scipy.integrate as integrate
@@ -9,61 +8,9 @@ import os
 import cv2
 import pandas as pd
 
-def CovertPARToNIFI(base_dir, out_dir, df):
-    os.makedirs(out_dir, exist_ok=True)
-    for seq_idx in range(len(df)):
-        patient_id = df.iloc[seq_idx]['Patient_id']
-        protocol = df.iloc[seq_idx]['Protocol']
-        sequence_id = df.iloc[seq_idx]['Sequence_id']
-        if 'Look Locker' in protocol:
-            print("T1: ", protocol)
-            image_name = '%f_%p_%t_%s'
-            target_path = os.path.join(base_dir, patient_id, sequence_id + '.rec')
-            output_path = os.path.join(out_dir, 'T1-nifti')
-            os.makedirs(output_path, exist_ok=True)
-            os.system('dcm2niix -f ' + image_name + ' -o ' + output_path + ' ' + target_path)
-        elif 'T2_ME' in protocol:
-            print("T2: ", protocol)
-            image_name = '%f_%p_%t_%s'
-            target_path = os.path.join(base_dir, patient_id, sequence_id + '.rec')
-            output_path = os.path.join(out_dir, 'T2-nifti')
-            os.makedirs(output_path, exist_ok=True)
-            os.system('dcm2niix -f ' + image_name + ' -o ' + output_path + ' ' + target_path)
-        elif 'Zspec' in protocol or 'Z_single' in protocol or 'EMR' in protocol:
-            print("EMR: ", protocol)
-            image_name = '%f_%p_%t_%s'
-            target_path = os.path.join(base_dir, patient_id, sequence_id + '.rec')
-            output_path = os.path.join(out_dir, 'EMR-nifti')
-            os.makedirs(output_path, exist_ok=True)
-            os.system('dcm2niix -f ' + image_name + ' -o ' + output_path + ' ' + target_path)  
-        elif 'WASSR' in protocol:
-            print("WASSR: ", protocol)
-            image_name = '%f_%p_%t_%s'
-            target_path = os.path.join(base_dir, patient_id, sequence_id + '.rec')
-            output_path = os.path.join(out_dir, 'WASSR-nifti')
-            os.makedirs(output_path, exist_ok=True)
-            os.system('dcm2niix -f ' + image_name + ' -o ' + output_path + ' ' + target_path) 
-
-def get_highRes(new_cases_dir, processed_cases_dir, patient_name):
-    out_dir = os.path.join(processed_cases_dir, patient_name+"_all", "Coronal", "HighRes")
-    os.makedirs(out_dir, exist_ok=False)
-    df = pd.read_excel(os.path.join(processed_cases_dir, patient_name+"_all", patient_name,
-                                    "all_scan_info.xlsx"))     
-    for seq_idx in range(len(df)):
-        patient_id = df.iloc[seq_idx]['Patient_id']
-        protocol = df.iloc[seq_idx]['Protocol']
-        sequence_id = df.iloc[seq_idx]['Sequence_id']
-        if 'HighRes' in protocol:
-            print("High Resolution: ", protocol)
-            image_name = '%f_%p_%t_%s'
-            target_path = os.path.join(new_cases_dir, patient_id, sequence_id + '.rec')
-            output_path = os.path.join(out_dir)
-            os.makedirs(output_path, exist_ok=True)
-            os.system('dcm2niix -f ' + image_name + ' -o ' + output_path + ' ' + target_path)
-            
 def plot_highRes(patient_name):
     path = os.path.join(r"C:\Users\jwu191\Desktop\Projects\AD_fitting\processed_data",
-                        patient_name+"_all", "Coronal", "HighRes")
+                        patient_name+"_all", "HighRes")
     for f in os.listdir(path):
         if f.endswith(".nii"):
             img = sitk.ReadImage(os.path.join(path, f))
@@ -204,12 +151,12 @@ def t1_map_3d(all_images, all_t, flag=0):
         res_3d.append(res_sl)
     return np.array(res_3d)
 
-def T1mapping(base_dir, out_dir, pid):
+def T1mapping(base_dir, out_dir, ub):
     all_t, all_images, imginfo = ReadData_T1(base_dir)
     t1_map_all = t1_map_3d(all_images, all_t, 1)
 
     t1_map_all[t1_map_all < 0] = 0
-    t1_map_all[t1_map_all > 3] = 3
+    t1_map_all[t1_map_all > ub] = ub
 
     # t1_map_all = removebackground(pid, t1_map_all)
 
@@ -243,15 +190,14 @@ def t2_map_3d(all_images, all_t, num_points):
         res_3d.append(res_sl)
     return np.array(res_3d)
 
-def T2mapping(base_dir, out_dir, pid):
+def T2mapping(base_dir, out_dir, ub):
     all_t, all_images, imginfo = ReadData_T2(base_dir)
     num_points = len(all_t)
     t2_map_all = t2_map_3d(all_images, all_t, num_points)
     t2_map_5_copy = np.copy(t2_map_all)
     t2_map_5_copy[np.isnan(t2_map_5_copy) == True] = 0
     t2_map_5_copy[t2_map_5_copy < 0] = 0
-    t2_map_5_copy[t2_map_5_copy > 0.4] = 0.4
-    
+    t2_map_5_copy[t2_map_5_copy > ub] = ub
     # t2_map_5_copy = removebackground(pid, t2_map_5_copy)
 
     t2_map_img = sitk.GetImageFromArray(t2_map_5_copy)
@@ -260,20 +206,11 @@ def T2mapping(base_dir, out_dir, pid):
     t2_map_img.SetDirection(imginfo[2])
     save_name = 'T2_map' + '.nii'
     sitk.WriteImage(t2_map_img, os.path.join(out_dir, save_name))
-    
 
-def get_nifti_for_fitting(new_cases_dir, processed_cases_dir, patient_name):
-    out_dir = os.path.join(processed_cases_dir, patient_name+"_all", patient_name+"_mapping")
-    os.makedirs(out_dir, exist_ok=False)       
-    df = pd.read_excel(os.path.join(processed_cases_dir, patient_name+"_all", patient_name,
-                                    "all_scan_info.xlsx"))     
-    CovertPARToNIFI(new_cases_dir, out_dir, df) 
-
-def get_T1_T2_map(processed_cases_dir, patient_name, view):
-    assert view == "Axial" or view == "Coronal"
-    out_dir = os.path.join(processed_cases_dir, patient_name+"_all", view)
-    T1mapping(os.path.join(out_dir, "T1-nifti"), out_dir, patient_name)
-    T2mapping(os.path.join(out_dir, "T2-nifti"), out_dir, patient_name) 
+def get_T1_T2_map(processed_cases_dir, patient_name):
+    out_dir = os.path.join(processed_cases_dir, patient_name+"_all")
+    # T1mapping(os.path.join(out_dir, "T1"), out_dir, ub=3)
+    T2mapping(os.path.join(out_dir, "T2"), out_dir, ub=5) 
 
 
 
